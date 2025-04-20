@@ -1,0 +1,59 @@
+# Visual Studio相关
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# 编译输出
+bin/
+obj/
+out/
+
+# NuGet包
+*.nupkg
+*.snupkg
+packages/
+project.lock.json
+project.fragment.lock.json
+artifacts/
+
+# 临时文件
+*.log
+*.tlog
+*.ide
+*.cache
+*.pdb
+*.tmp
+*.tmp.*
+*.bak
+*.swp
+
+# 发布文件
+*.publishsettings
+*.pubxml
+*.pubxml.user
+
+# 数据库文件
+*.mdf
+*.ldf
+
+# 配置文件
+appsettings.*.json
+secrets.json
+
+# 操作系统文件
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Rider/JetBrains相关
+.idea/
+*.sln.iml
+
+# Resharper
+_ReSharper*/
+*.DotSettings.user
+
+# 其他
+*.lock.json
