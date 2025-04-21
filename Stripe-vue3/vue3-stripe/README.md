@@ -10,6 +10,7 @@
 - 简洁的用户体验
 - 后端API调用处理支付
 - 完整的订单和用户信息支持
+- 多种支付方式支持（信用卡、Apple Pay、Google Pay、支付宝等）
 
 ## 项目设置
 
@@ -38,6 +39,20 @@ npm run dev
 npm run build
 ```
 
+## 支持的支付方式
+
+本应用支持以下支付方式：
+
+1. **信用卡/借记卡** - 全球通用
+2. **Apple Pay** - 需要Safari浏览器和Apple设备
+3. **Google Pay** - 需要支持的浏览器和设备
+4. **支付宝** - 适用于中国用户
+
+支付方式的可用性取决于：
+- 用户的设备和浏览器
+- 商家Stripe账户的配置
+- 用户的地理位置
+
 ## 后端API格式
 
 ### 创建支付意向API
@@ -52,7 +67,8 @@ Content-Type: application/json
   "description": "商品购买",
   "userId": "user123",
   "userName": "测试用户",
-  "email": "test@example.com"
+  "email": "test@example.com",
+  "payment_method_types": ["card", "apple_pay", "google_pay", "alipay"]
 }
 ```
 
@@ -90,3 +106,4 @@ Content-Type: application/json
 - 在生产环境中使用时，请确保遵循PCI合规标准
 - 请勿在生产环境中使用测试密钥
 - 在实际应用中，应当从用户会话或表单中获取用户信息，而非硬编码
+- 某些支付方式（如Apple Pay）在开发环境中可能无法正常工作，需要在HTTPS环境下测试

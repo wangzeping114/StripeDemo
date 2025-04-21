@@ -1,15 +1,25 @@
 <script setup>
-import StripePayment from './components/StripePayment.vue'
+// 无需导入任何组件，路由将管理组件的渲染
 </script>
 
 <template>
   <div class="app">
-    <StripePayment />
+    <router-view />
   </div>
 </template>
 
 <style>
 @import './assets/base.css';
+
+body {
+  font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  color: #2c3e50;
+  margin: 0;
+  padding: 0;
+  background-color: #f7fafc;
+}
 
 .app {
   max-width: 1280px;
@@ -22,6 +32,7 @@ import StripePayment from './components/StripePayment.vue'
   body {
     display: flex;
     place-items: center;
+    min-height: 100vh;
   }
 
   .app {

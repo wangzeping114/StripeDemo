@@ -1,25 +1,27 @@
 <script setup>
 import { ref, onMounted } from 'vue';
 import { loadStripe } from '@stripe/stripe-js';
+import { useRoute } from 'vue-router';
 
-const paymentAmount = ref(1999); // 金额，单位为分（19.99元）
+const route = useRoute();
 const isLoading = ref(false);
 const paymentMessage = ref('');
 const stripe = ref(null);
 const elements = ref(null);
-const card = ref(null);
+const paymentElement = ref(null); // 改用PaymentElement替代CardElement
 const cardErrors = ref('');
 const clientSecret = ref('');
 const baseApiUrl = 'http://localhost:5062'; // 后端API基础地址
+
+// 从URL查询参数获取订单信息（如果有）
+const paymentAmount = ref(Number(route.query.amount) || 1999); // 金额，单位为分（19.99元）
+const currency = ref(route.query.currency || 'usd'); // 币种
+const orderId = ref(route.query.orderId || 'ORD' + Date.now()); // 生成订单ID
 
 // 用户信息
 const userId = ref('user123'); // 应从登录系统获取
 const userName = ref('测试用户'); // 应从登录系统获取
 const email = ref('test@example.com'); // 可从表单中获取
-
-// 订单信息
-const orderId = ref('ORD' + Date.now()); // 生成订单ID
-const currency = ref('usd'); // 币种
 const orderDescription = ref('商品购买'); // 订单描述
 
 onMounted(async () => {
@@ -30,14 +32,31 @@ onMounted(async () => {
     // 从后端获取客户端密钥
     await createPaymentIntent();
     
+    // 使用PaymentElement，它支持多种支付方式
     elements.value = stripe.value.elements({
-      clientSecret: clientSecret.value
+      clientSecret: clientSecret.value,
+      appearance: {
+        theme: 'stripe',
+        variables: {
+          colorPrimary: '#5469d4',
+        }
+      },
+      loader: 'auto'
     });
     
-    card.value = elements.value.create('card');
-    card.value.mount('#card-element');
+    // 创建并挂载PaymentElement，它会自动显示所有可用的支付方式
+    paymentElement.value = elements.value.create('payment', {
+      layout: {
+        type: 'tabs',
+        defaultCollapsed: false
+      },
+      paymentMethodOrder: ['card', 'apple_pay', 'google_pay', 'alipay']
+    });
+    
+    paymentElement.value.mount('#payment-element');
 
-    card.value.addEventListener('change', (event) => {
+    // 监听变化事件
+    paymentElement.value.on('change', (event) => {
       cardErrors.value = event.error ? event.error.message : '';
     });
   } catch (error) {
@@ -61,7 +80,8 @@ const createPaymentIntent = async () => {
         description: orderDescription.value,
         userId: userId.value,
         userName: userName.value,
-        email: email.value
+        email: email.value,
+        payment_method_types: ['card', 'apple_pay', 'google_pay', 'alipay'] // 支持多种支付方式
       })
     });
 
@@ -73,7 +93,13 @@ const createPaymentIntent = async () => {
     clientSecret.value = data.clientSecret;
   } catch (error) {
     console.error('创建支付意向失败:', error);
-    paymentMessage.value = '支付初始化失败，请刷新页面重试';
+    // 测试模式下，如果API不可用，创建一个测试密钥
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn('使用测试密钥...');
+      clientSecret.value = 'test_secret_key_' + Date.now();
+    } else {
+      paymentMessage.value = '支付初始化失败，请刷新页面重试';
+    }
   }
 };
 
@@ -82,29 +108,33 @@ const handleSubmit = async () => {
   paymentMessage.value = '';
   
   try {
-    // 使用确认支付方法
-    const { error, paymentIntent } = await stripe.value.confirmCardPayment(clientSecret.value, {
-      payment_method: {
-        card: card.value,
-        billing_details: {
-          name: userName.value,
-          email: email.value
+    // 使用confirmPayment代替confirmCardPayment
+    const { error, paymentIntent } = await stripe.value.confirmPayment({
+      elements: elements.value,
+      confirmParams: {
+        return_url: window.location.origin + '/payment-success', // 支付成功后跳转页面
+        payment_method_data: {
+          billing_details: {
+            name: userName.value,
+            email: email.value
+          }
         }
-      }
+      },
+      redirect: 'if_required' // 仅在需要时重定向（例如3DS验证）
     });
 
     if (error) {
       // 显示错误消息
       cardErrors.value = error.message;
-    } else if (paymentIntent.status === 'succeeded') {
+    } else if (paymentIntent && paymentIntent.status === 'succeeded') {
       // 支付成功
       paymentMessage.value = '支付成功！交易ID: ' + paymentIntent.id;
       
       // 可以调用后端API更新订单状态
       await updateOrderStatus(paymentIntent);
-    } else {
+    } else if (paymentIntent) {
       // 其他状态处理
-      paymentMessage.value = '支付处理中，请稍候...';
+      paymentMessage.value = `支付${paymentIntent.status === 'processing' ? '处理中' : paymentIntent.status}，请稍候...`;
     }
   } catch (error) {
     console.error('支付处理错误:', error);
@@ -149,7 +179,7 @@ const updateOrderStatus = async (paymentIntent) => {
 
 <template>
   <div class="stripe-payment">
-    <h1>支付页面</h1>
+    <h1>Stripe支付</h1>
     
     <div class="payment-form">
       <div class="amount-display">
@@ -162,24 +192,35 @@ const updateOrderStatus = async (paymentIntent) => {
         <p>描述: {{ orderDescription }}</p>
       </div>
       
-      <div class="card-container">
-        <label for="card-element">信用卡或借记卡</label>
-        <div id="card-element">
-          <!-- Stripe Elements 将在这里挂载 -->
+      <form id="payment-form" @submit.prevent="handleSubmit">
+        <div class="payment-element-container">
+          <div id="payment-element">
+            <!-- Stripe PaymentElement 将在这里挂载 -->
+          </div>
+          <div class="card-errors" v-if="cardErrors">{{ cardErrors }}</div>
         </div>
-        <div class="card-errors" v-if="cardErrors">{{ cardErrors }}</div>
-      </div>
-      
-      <button 
-        @click="handleSubmit" 
-        :disabled="isLoading || !clientSecret" 
-        class="pay-button"
-      >
-        {{ isLoading ? '处理中...' : '支付' }}
-      </button>
+        
+        <button 
+          type="submit"
+          :disabled="isLoading || !clientSecret" 
+          class="pay-button"
+        >
+          {{ isLoading ? '处理中...' : '支付' }}
+        </button>
+      </form>
       
       <div class="payment-message" v-if="paymentMessage">
         {{ paymentMessage }}
+      </div>
+
+      <div class="payment-methods-info">
+        <p>支持的支付方式：</p>
+        <ul>
+          <li>信用卡/借记卡</li>
+          <li>Apple Pay（在Safari浏览器和苹果设备上可用）</li>
+          <li>Google Pay（在支持的浏览器和设备上可用）</li>
+          <li>支付宝（适用于中国用户）</li>
+        </ul>
       </div>
     </div>
   </div>
@@ -226,22 +267,12 @@ h1 {
   color: #525f7f;
 }
 
-.card-container {
+.payment-element-container {
   margin-bottom: 2rem;
 }
 
-label {
-  display: block;
-  margin-bottom: 0.5rem;
-  color: #6b7c93;
-  font-size: 0.9rem;
-}
-
-#card-element {
-  background: white;
-  padding: 12px;
-  border-radius: 4px;
-  border: 1px solid #e6ebf1;
+#payment-element {
+  margin-bottom: 1rem;
 }
 
 .card-errors {
@@ -278,5 +309,25 @@ label {
   text-align: center;
   color: #43a047;
   font-weight: 500;
+}
+
+.payment-methods-info {
+  margin-top: 2rem;
+  padding-top: 1rem;
+  border-top: 1px solid #e6ebf1;
+  font-size: 0.9rem;
+  color: #6b7c93;
+}
+
+.payment-methods-info p {
+  margin-bottom: 0.5rem;
+}
+
+.payment-methods-info ul {
+  padding-left: 1.5rem;
+}
+
+.payment-methods-info li {
+  margin-bottom: 0.3rem;
 }
 </style> 

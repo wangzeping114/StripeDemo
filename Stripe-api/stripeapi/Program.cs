@@ -30,7 +30,7 @@ static async Task UisingKeys(string stripeKey)
         throw new ArgumentNullException(nameof(stripeKey), "Stripe secret key is not set.");
     }
     StripeConfiguration.ApiKey = stripeKey;
-    // ÕâÀï¿ÉÒÔÌí¼ÓÆäËû Stripe ³õÊ¼»¯´úÂë
+    // ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ Stripe ï¿½ï¿½Ê¼ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
     var customerService = new CustomerService();
     var createOptions = new CustomerCreateOptions
     {
@@ -43,8 +43,8 @@ static async Task UisingKeys(string stripeKey)
 static async Task UsingKeysWithRequestOptions(string stripeKey)
 {
     var client = new SystemNetHttpClient();
-    var stripeteClient = new StripeClient(stripeKey, httpClient: client);
-    var customerService = new CustomerService(stripeteClient);
+    var stripeClient = new StripeClient(stripeKey, httpClient: client);
+    var customerService = new CustomerService(stripeClient);
     var requestOptions = new RequestOptions
     {
         ApiKey = stripeKey,
