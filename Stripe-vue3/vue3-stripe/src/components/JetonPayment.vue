@@ -1,10 +1,12 @@
 <script setup>
 import { ref, onMounted } from 'vue';
-import { useRoute } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 
 const route = useRoute();
+const router = useRouter();
 const isLoading = ref(false);
 const paymentMessage = ref('');
+const paymentSuccess = ref(false);
 const baseApiUrl = 'http://localhost:5062'; // 后端API基础地址
 
 // 从URL查询参数获取订单信息
@@ -33,29 +35,11 @@ onMounted(async () => {
 // 初始化Jeton支付
 const initJetonPayment = async () => {
   try {
-    const response = await fetch(`${baseApiUrl}/api/Payment/init-jeton-payment`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        amount: paymentAmount.value,
-        currency: currency.value,
-        orderId: orderId.value,
-        description: orderDescription.value,
-        userId: userId.value,
-        userName: userName.value,
-        email: email.value
-      })
-    });
-
-    if (!response.ok) {
-      throw new Error('服务器响应错误');
-    }
-
-    const data = await response.json();
-    // 存储支付相关参数（实际实现中可能有所不同）
-    console.log('Jeton支付初始化成功', data);
+    console.log('初始化Jeton支付...');
+    // 实际项目中应调用后端API进行初始化
+    // 这里模拟初始化过程
+    await new Promise(resolve => setTimeout(resolve, 500));
+    console.log('Jeton支付初始化成功');
   } catch (error) {
     console.error('初始化Jeton支付失败:', error);
     paymentMessage.value = '支付初始化失败，请刷新页面重试';
@@ -73,36 +57,30 @@ const handleSubmit = async () => {
   paymentMessage.value = '';
   
   try {
-    const response = await fetch(`${baseApiUrl}/api/Payment/process-jeton-payment`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        walletId: walletId.value,
-        amount: paymentAmount.value,
-        currency: currency.value,
-        orderId: orderId.value,
-        description: orderDescription.value,
-        userId: userId.value,
-        userName: userName.value,
-        email: email.value
-      })
-    });
-
-    if (!response.ok) {
-      throw new Error('支付处理失败');
-    }
-
-    const result = await response.json();
+    // 模拟支付处理
+    await new Promise(resolve => setTimeout(resolve, 1500));
     
-    if (result.success) {
-      paymentMessage.value = '支付成功！交易ID: ' + result.transactionId;
-      // 更新订单状态
-      await updateOrderStatus(result.transactionId);
-    } else {
-      paymentMessage.value = result.message || '支付失败，请重试';
-    }
+    // 假设支付成功
+    const transactionId = 'JTN' + Date.now();
+    paymentMessage.value = '支付成功！交易ID: ' + transactionId;
+    paymentSuccess.value = true;
+    
+    // 更新订单状态
+    await updateOrderStatus(transactionId);
+    
+    // 3秒后跳转到成功页面
+    setTimeout(() => {
+      router.push({
+        path: '/payment-success',
+        query: {
+          amount: paymentAmount.value,
+          currency: currency.value,
+          orderId: orderId.value,
+          transactionId: transactionId,
+          paymentMethod: 'jeton_wallet'
+        }
+      });
+    }, 3000);
   } catch (error) {
     console.error('支付处理错误:', error);
     paymentMessage.value = '支付处理出错，请重试';
@@ -113,33 +91,17 @@ const handleSubmit = async () => {
 
 // 更新订单状态
 const updateOrderStatus = async (transactionId) => {
-  try {
-    const response = await fetch(`${baseApiUrl}/api/Payment/update-jeton-order-status`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        transactionId: transactionId,
-        amount: paymentAmount.value,
-        currency: currency.value,
-        orderId: orderId.value,
-        description: orderDescription.value,
-        userId: userId.value,
-        userName: userName.value,
-        email: email.value,
-        paymentStatus: 'succeeded',
-        paymentMethod: 'jeton_wallet',
-        transactionDate: new Date().toISOString()
-      })
-    });
+  console.log('更新订单状态:', {
+    transactionId,
+    orderId: orderId.value,
+    paymentStatus: 'succeeded'
+  });
+  // 实际项目中应调用后端API更新订单状态
+};
 
-    if (!response.ok) {
-      console.warn('订单状态更新可能失败');
-    }
-  } catch (error) {
-    console.error('更新订单状态错误:', error);
-  }
+// 返回首页
+const goBack = () => {
+  router.push('/');
 };
 </script>
 
@@ -149,48 +111,73 @@ const updateOrderStatus = async (transactionId) => {
     
     <div class="payment-form">
       <div class="amount-display">
-        总计: {{ (paymentAmount / 100).toFixed(2) }} {{ currency.toUpperCase() }}
+        应支付: <span class="amount">{{ (paymentAmount / 100).toFixed(2) }} {{ currency.toUpperCase() }}</span>
       </div>
       
       <div class="order-info">
-        <p>订单编号: {{ orderId }}</p>
-        <p>客户: {{ userName }}</p>
-        <p>描述: {{ orderDescription }}</p>
+        <p><strong>订单编号:</strong> {{ orderId }}</p>
+        <p><strong>客户:</strong> {{ userName }}</p>
+        <p><strong>描述:</strong> {{ orderDescription }}</p>
       </div>
       
       <div class="jeton-logo">
         <div class="logo-image"></div>
+        <h3>通过Jeton Wallet支付</h3>
       </div>
       
-      <form id="jeton-form">
-        <div class="form-group">
-          <label for="wallet-id">Jeton钱包ID</label>
-          <input 
-            type="text" 
-            id="wallet-id" 
-            v-model="walletId" 
-            placeholder="请输入您的Jeton钱包ID" 
-            required
-          />
-        </div>
-        
-        <button 
-          type="button"
-          @click="handleSubmit" 
-          :disabled="isLoading" 
-          class="pay-button"
-        >
-          {{ isLoading ? '处理中...' : '确认支付' }}
-        </button>
-      </form>
+      <div v-if="!paymentSuccess" class="form-container">
+        <form id="jeton-form" @submit.prevent="handleSubmit">
+          <div class="form-group">
+            <label for="wallet-id">Jeton钱包ID</label>
+            <input 
+              type="text" 
+              id="wallet-id" 
+              v-model="walletId" 
+              placeholder="请输入您的Jeton钱包ID" 
+              :disabled="isLoading"
+              required
+            />
+            <small class="form-hint">您可以在Jeton账户中心找到您的钱包ID</small>
+          </div>
+          
+          <div class="form-actions">
+            <button 
+              type="button"
+              @click="goBack" 
+              :disabled="isLoading" 
+              class="back-button"
+            >
+              返回
+            </button>
+            
+            <button 
+              type="submit"
+              :disabled="isLoading" 
+              class="pay-button"
+            >
+              <span v-if="isLoading" class="spinner"></span>
+              {{ isLoading ? '处理中...' : '确认支付' }}
+            </button>
+          </div>
+        </form>
+      </div>
       
-      <div class="payment-message" v-if="paymentMessage">
+      <div 
+        class="payment-message" 
+        v-if="paymentMessage"
+        :class="{ 'success': paymentSuccess, 'error': !paymentSuccess && paymentMessage }"
+      >
         {{ paymentMessage }}
       </div>
       
       <div class="payment-notes">
-        <p>使用Jeton Wallet支付无需信用卡，安全快捷。</p>
-        <p>如果您没有Jeton钱包，<a href="https://www.jeton.com" target="_blank">点击此处注册</a>。</p>
+        <h4>Jeton Wallet支付</h4>
+        <p>安全快捷，全球通用的电子钱包支付方式。</p>
+        <p>如果您没有Jeton钱包，<a href="https://www.jeton.com" target="_blank" rel="noopener noreferrer">点击此处注册</a>。</p>
+        <div class="security-badges">
+          <div class="security-badge ssl"></div>
+          <div class="security-badge secure"></div>
+        </div>
       </div>
     </div>
   </div>
@@ -200,40 +187,46 @@ const updateOrderStatus = async (transactionId) => {
 .jeton-payment {
   max-width: 600px;
   margin: 0 auto;
-  padding: 2rem;
+  padding: 2rem 1rem;
 }
 
 h1 {
   text-align: center;
   margin-bottom: 2rem;
-  color: #32325d;
+  color: #1695A3;
 }
 
 .payment-form {
   background: #f8f9fa;
-  border-radius: 8px;
+  border-radius: 12px;
   padding: 2rem;
   box-shadow: 0 4px 6px rgba(50, 50, 93, 0.11), 0 1px 3px rgba(0, 0, 0, 0.08);
 }
 
 .amount-display {
+  font-size: 1.25rem;
+  text-align: center;
+  margin-bottom: 1.5rem;
+  color: #525f7f;
+}
+
+.amount {
   font-size: 1.5rem;
   font-weight: bold;
-  text-align: center;
-  margin-bottom: 1rem;
-  color: #32325d;
+  color: #1695A3;
 }
 
 .order-info {
-  margin-bottom: 1.5rem;
+  margin-bottom: 2rem;
   padding: 1rem;
-  background: rgba(255, 255, 255, 0.5);
-  border-radius: 4px;
+  background: rgba(22, 149, 163, 0.05);
+  border-radius: 8px;
+  border-left: 4px solid #1695A3;
 }
 
 .order-info p {
-  margin: 0.3rem 0;
-  font-size: 0.9rem;
+  margin: 0.5rem 0;
+  font-size: 0.95rem;
   color: #525f7f;
 }
 
@@ -242,54 +235,97 @@ h1 {
   margin-bottom: 2rem;
 }
 
+.jeton-logo h3 {
+  margin-top: 1rem;
+  color: #1695A3;
+  font-size: 1.2rem;
+}
+
 .logo-image {
-  display: inline-block;
-  width: 120px;
-  height: 120px;
-  background-image: url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHZpZXdCb3g9IjAgMCA2MCA2MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48Y2lyY2xlIGN4PSIzMCIgY3k9IjMwIiByPSIzMCIgZmlsbD0iIzE2OTVBMyIvPjxwYXRoIGQ9Ik0xNC4wNDY5IDI0LjQwODVIMTguMjg4MlYzNS41OTE1SDE0LjA0NjlWMjQuNDA4NVoiIGZpbGw9IndoaXRlIi8+PHBhdGggZD0iTTI2LjA4NTkgMjQuNDA4NUgzMC4zMjcyTDI2LjMwMDQgMzUuNTkxNUgyMi4wNTkyTDI2LjA4NTkgMjQuNDA4NVoiIGZpbGw9IndoaXRlIi8+PHBhdGggZD0iTTM4LjEyMjEgMjQuNDA4NUg0Mi4zNjM0TDM4LjMzNjUgMzUuNTkxNUgzNC4wOTUzTDM4LjEyMjEgMjQuNDA4NVoiIGZpbGw9IndoaXRlIi8+PHBhdGggZD0iTTQ2Ljc1MzEgMjQuNDA4NUg0NC4wNDY5TDQyLjc5NTcgMjguNzMyNEw0NC4wNDY5IDI0LjQwODVMNDYuNzUzMSAyNC40MDg1WiIgZmlsbD0id2hpdGUiLz48cGF0aCBkPSJNMTkuMzA2MSAyNC40MDg1SDI0LjU0MzlMMjIuNDY5OSAzMC43NTM1TDIwLjYxNjcgMzUuNTkxNUwxOS4zMDYxIDMxLjU3ODhWMjQuNDA4NVoiIGZpbGw9IndoaXRlIi8+PHBhdGggZD0iTTMxLjM0NTEgMjQuNDA4NUgzNi41ODMxTDM0LjUwODkgMzAuNzUzNUwzMi42NTU5IDM1LjU5MTVMMzEuMzQ1MSAzMS41Nzg4VjI0LjQwODVaIiBmaWxsPSJ3aGl0ZSIvPjwvc3ZnPg==');
+  width: 100px;
+  height: 100px;
+  margin: 0 auto;
+  background-image: url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgdmlld0JveD0iMCAwIDEwMCAxMDAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGNpcmNsZSBjeD0iNTAiIGN5PSI1MCIgcj0iNTAiIGZpbGw9IiMxNjk1QTMiLz48cGF0aCBkPSJNMjMuNDExNSA0MC42ODA4SDMwLjQ4MDRWNTkuMzE5MkgyMy40MTE1VjQwLjY4MDhaIiBmaWxsPSJ3aGl0ZSIvPjxwYXRoIGQ9Ik00My40NzY1IDQwLjY4MDhINTAuNTQ1NEw0My44MzQgNTkuMzE5MkgzNi43NjUyTDQzLjQ3NjUgNDAuNjgwOFoiIGZpbGw9IndoaXRlIi8+PHBhdGggZD0iTTYzLjUzNjkgNDAuNjgwOEg3MC42MDU3TDYzLjg5NDMgNTkuMzE5Mkg1Ni44MjU0TDYzLjUzNjkgNDAuNjgwOFoiIGZpbGw9IndoaXRlIi8+PHBhdGggZD0iTTc3LjkyMTggNDAuNjgwOEg3My40MTE1TDcxLjMyNjEgNDcuODg3M0w3My40MTE1IDQwLjY4MDhINzcuOTIxOFoiIGZpbGw9IndoaXRlIi8+PHBhdGggZD0iTTMyLjE3NjggNDAuNjgwOEg0MC45MDY1TDM3LjQ0OTkgNTEuMjU1OEwzNC4zNjEyIDU5LjMxOTJMMzIuMTc2OCA1Mi42MzE0VjQwLjY4MDhaIiBmaWxsPSJ3aGl0ZSIvPjxwYXRoIGQ9Ik01Mi4yNDE4IDQwLjY4MDhINjAuOTcxOUw1Ny41MTQ5IDUxLjI1NThMNTQuNDI2NiA1OS4zMTkyTDUyLjI0MTggNTIuNjMxNFY0MC42ODA4WiIgZmlsbD0id2hpdGUiLz48L3N2Zz4=');
   background-size: contain;
   background-position: center;
   background-repeat: no-repeat;
+}
+
+.form-container {
+  margin-bottom: 1.5rem;
 }
 
 .form-group {
   margin-bottom: 1.5rem;
 }
 
-label {
+.form-group label {
   display: block;
   margin-bottom: 0.5rem;
-  color: #6b7c93;
-  font-size: 0.9rem;
+  color: #525f7f;
+  font-weight: 500;
 }
 
-input {
+.form-group input {
   width: 100%;
-  padding: 12px;
-  border-radius: 4px;
+  padding: 0.75rem;
   border: 1px solid #e6ebf1;
+  border-radius: 4px;
   font-size: 1rem;
-  box-sizing: border-box;
+  transition: border-color 0.2s ease;
 }
 
-input:focus {
+.form-group input:focus {
   outline: none;
   border-color: #1695A3;
   box-shadow: 0 0 0 1px #1695A3;
 }
 
+.form-hint {
+  display: block;
+  margin-top: 0.5rem;
+  color: #6b7c93;
+  font-size: 0.8rem;
+}
+
+.form-actions {
+  display: flex;
+  gap: 1rem;
+}
+
+.back-button {
+  flex: 1;
+  background: transparent;
+  color: #6b7c93;
+  border: 1px solid #e6ebf1;
+  border-radius: 4px;
+  padding: 0.75rem 1rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.back-button:hover {
+  background: #f7fafc;
+  color: #1695A3;
+  border-color: #1695A3;
+}
+
 .pay-button {
+  flex: 2;
   background: #1695A3;
   color: white;
   border-radius: 4px;
   border: 0;
-  padding: 12px 16px;
-  font-size: 1rem;
+  padding: 0.75rem 1rem;
+  font-size: 0.9rem;
   font-weight: 600;
   cursor: pointer;
-  display: block;
-  width: 100%;
   transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .pay-button:hover {
@@ -297,36 +333,95 @@ input:focus {
 }
 
 .pay-button:disabled {
-  opacity: 0.5;
+  opacity: 0.7;
   cursor: default;
 }
 
+.spinner {
+  display: inline-block;
+  width: 1rem;
+  height: 1rem;
+  margin-right: 0.5rem;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-radius: 50%;
+  border-top-color: white;
+  animation: spin 1s ease-in-out infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
 .payment-message {
-  margin-top: 1.5rem;
+  padding: 1rem;
+  margin-bottom: 1.5rem;
+  border-radius: 4px;
   text-align: center;
-  color: #43a047;
   font-weight: 500;
+}
+
+.payment-message.success {
+  background-color: #efffd2;
+  color: #3c8505;
+}
+
+.payment-message.error {
+  background-color: #fff0f0;
+  color: #e42222;
 }
 
 .payment-notes {
   margin-top: 2rem;
-  padding-top: 1rem;
-  border-top: 1px solid #e6ebf1;
+  padding: 1.5rem;
+  background: white;
+  border-radius: 8px;
+  border: 1px solid #e6ebf1;
+}
+
+.payment-notes h4 {
+  color: #1695A3;
+  margin-top: 0;
+  margin-bottom: 1rem;
   text-align: center;
-  color: #6b7c93;
-  font-size: 0.85rem;
 }
 
 .payment-notes p {
   margin: 0.5rem 0;
+  color: #6b7c93;
+  font-size: 0.9rem;
+  text-align: center;
 }
 
 .payment-notes a {
   color: #1695A3;
   text-decoration: none;
+  font-weight: 500;
 }
 
 .payment-notes a:hover {
   text-decoration: underline;
+}
+
+.security-badges {
+  display: flex;
+  justify-content: center;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.security-badge {
+  width: 40px;
+  height: 40px;
+  background-size: contain;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+.security-badge.ssl {
+  background-image: url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48Y2lyY2xlIGN4PSIyMCIgY3k9IjIwIiByPSIyMCIgZmlsbD0iI2VmZmZkMiIvPjxwYXRoIGQ9Ik0yMCAxMkMxNy44IDEyIDE2IDE0IDE2IDE2VjE4SDI0VjE2QzI0IDE0IDIyLjIgMTIgMjAgMTJaTTE0IDE4VjE2QzE0IDEzIDE2LjggMTAgMjAgMTBDMjMuMiAxMCAyNiAxMyAyNiAxNlYxOEgyN0MyOCAxOCAyOSAxOSAyOSAyMFYyOEMyOSAyOSAyOCAzMCAyNyAzMEgxM0MxMiAzMCAxMSAyOSAxMSAyOFYyMEMxMSAxOSAxMiAxOCAxMyAxOEgxNFoiIGZpbGw9IiMzYzg1MDUiLz48L3N2Zz4=');
+}
+
+.security-badge.secure {
+  background-image: url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48Y2lyY2xlIGN4PSIyMCIgY3k9IjIwIiByPSIyMCIgZmlsbD0iI2VmZmZkMiIvPjxwYXRoIGQ9Ik0yMCAxMEMxNC41IDEwIDEwIDE0LjUgMTAgMjBDMTAgMjUuNSAxNC41IDMwIDIwIDMwQzI1LjUgMzAgMzAgMjUuNSAzMCAyMEMzMCAxNC41IDI1LjUgMTAgMjAgMTBaTTIwIDI4QzE1LjYgMjggMTIgMjQuNSAxMiAyMEMxMiAxNS41IDE1LjYgMTIgMjAgMTJDMjQuNCAxMiAyOCAxNS41IDI4IDIwQzI4IDI0LjUgMjQuNCAyOCAyMCAyOFpNMjQgMTlMMTkgMjRMMTYgMjFMMTcuNSAxOS41TDE5IDIxTDIyLjUgMTcuNUwyNCAxOVoiIGZpbGw9IiMzYzg1MDUiLz48L3N2Zz4=');
 }
 </style> 

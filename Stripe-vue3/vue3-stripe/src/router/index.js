@@ -1,9 +1,8 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import PaymentSelection from '../components/PaymentSelection.vue'
-import StripePayment from '../components/StripePayment.vue'
 import JetonPayment from '../components/JetonPayment.vue'
-import StripeWithdrawal from '../components/StripeWithdrawal.vue'
 import ConnectOnboarding from '../components/ConnectOnboarding.vue'
+import ConnectPayment from '../components/ConnectPayment.vue'
 
 const routes = [
   {
@@ -12,24 +11,19 @@ const routes = [
     component: PaymentSelection
   },
   {
-    path: '/stripe-payment',
-    name: 'StripePayment',
-    component: StripePayment
-  },
-  {
     path: '/jeton-payment',
     name: 'JetonPayment',
     component: JetonPayment
   },
   {
-    path: '/withdrawal',
-    name: 'StripeWithdrawal',
-    component: StripeWithdrawal
-  },
-  {
     path: '/connect',
     name: 'ConnectOnboarding',
     component: ConnectOnboarding
+  },
+  {
+    path: '/connect-payment',
+    name: 'ConnectPayment',
+    component: ConnectPayment
   },
   {
     path: '/payment-success',

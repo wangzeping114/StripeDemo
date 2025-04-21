@@ -291,9 +291,9 @@ namespace stripeapi.Controllers
                 
                 var service = new BalanceService();
                 var balance = await service.GetAsync(requestOptions);
-                
-                return Ok(new
+                var balanceInfo = new
                 {
+
                     available = balance.Available.Select(b => new
                     {
                         amount = b.Amount,
@@ -307,7 +307,9 @@ namespace stripeapi.Controllers
                         sourceTypes = b.SourceTypes
                     }),
                     connectAccountId = accountId
-                });
+                };
+
+                return Ok(balanceInfo);
             }
             catch (StripeException ex)
             {
