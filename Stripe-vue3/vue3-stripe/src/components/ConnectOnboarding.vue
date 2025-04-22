@@ -37,7 +37,7 @@ const createConnectAccount = async () => {
       },
       body: JSON.stringify({
         country: 'US', // 可根据实际需要修改国家/地区代码
-        email: 'user@example.com', // 在生产环境中应该使用实际用户邮箱
+        email: 'testaccount@example.com', // 在生产环境中应该使用实际用户邮箱
         businessType: 'individual', // 或'company', 视业务需求而定
         businessProfile: {
           url: 'https://example.com', // 您的网站URL

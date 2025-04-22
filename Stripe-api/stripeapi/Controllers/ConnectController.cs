@@ -336,63 +336,85 @@ namespace stripeapi.Controllers
         {
             try
             {
+                // 验证参数
                 if (string.IsNullOrEmpty(accountId))
                 {
                     return BadRequest(new { error = "Connect账户ID不能为空" });
                 }
                 
-                if (string.IsNullOrEmpty(request.TokenId))
+                if (request == null || string.IsNullOrEmpty(request.TokenId))
                 {
                     return BadRequest(new { error = "银行账户Token不能为空" });
                 }
                 
-                // 使用AccountService添加外部账户
-                var service = new AccountService();
+                // 记录输入参数
+                Console.WriteLine($"添加银行账户 - AccountId: {accountId}, TokenId: {request.TokenId}");
                 
-                // 更新账户添加银行账户
-                var account = await service.UpdateAsync(accountId, new AccountUpdateOptions
+                try
                 {
-                    ExternalAccount = request.TokenId
-                });
-                
-                // 获取新添加的银行账户（添加后通常会成为默认账户）
-                // 不使用Created属性进行排序，而是简单获取第一个银行账户对象
-                var bankAccount = account.ExternalAccounts?.Data
-                    .Where(a => a.Object == "bank_account")
-                    .FirstOrDefault() as BankAccount;
-                
-                if (bankAccount != null)
-                {
-                    return Ok(new
+                    // 正确使用AccountService来添加外部账户
+                    var accountService = new AccountService();
+                    
+                    // 添加外部账户到Connect账户
+                    var options = new AccountUpdateOptions
                     {
-                        bankAccountId = bankAccount.Id,
-                        country = bankAccount.Country,
-                        currency = bankAccount.Currency,
-                        last4 = bankAccount.Last4,
-                        bankName = bankAccount.BankName,
-                        status = bankAccount.Status,
-                        default_for_currency = bankAccount.DefaultForCurrency,
-                        connectAccountId = accountId
+                        ExternalAccount = request.TokenId
+                    };
+                    
+                    var account = await accountService.UpdateAsync(accountId, options);
+                    
+                    // 获取最新添加的银行账户
+                    var bankAccount = account.ExternalAccounts?.Data
+                        .FirstOrDefault(a => a.Object == "bank_account") as BankAccount;
+                    
+                    if (bankAccount != null)
+                    {
+                        return Ok(new
+                        {
+                            bankAccountId = bankAccount.Id,
+                            country = bankAccount.Country,
+                            currency = bankAccount.Currency,
+                            last4 = bankAccount.Last4,
+                            bankName = bankAccount.BankName,
+                            status = bankAccount.Status,
+                            default_for_currency = bankAccount.DefaultForCurrency,
+                            connectAccountId = accountId
+                        });
+                    }
+                    else
+                    {
+                        // 如果找不到银行账户但账户已更新，返回成功信息
+                        return Ok(new
+                        {
+                            success = true,
+                            message = "银行账户已添加，但无法获取详细信息",
+                            accountId = account.Id
+                        });
+                    }
+                }
+                catch (StripeException ex)
+                {
+                    // 捕获并记录Stripe异常的详细信息
+                    Console.WriteLine($"Stripe错误: 代码={ex.StripeError?.Code}, 类型={ex.StripeError?.Type}");
+                    Console.WriteLine($"详细信息: {ex.Message}");
+                    
+                    return BadRequest(new { 
+                        error = ex.Message,
+                        code = ex.StripeError?.Code,
+                        type = ex.StripeError?.Type
                     });
                 }
-                else
-                {
-                    // 如果找不到银行账户，则返回账户基本信息
-                    return Ok(new
-                    {
-                        accountId = account.Id,
-                        email = account.Email,
-                        external_accounts_count = account.ExternalAccounts?.Data?.Count ?? 0,
-                        connectAccountId = accountId
-                    });
-                }
-            }
-            catch (StripeException ex)
-            {
-                return BadRequest(new { error = ex.Message });
             }
             catch (Exception ex)
             {
+                // 记录详细错误信息
+                Console.WriteLine($"添加银行账户一般错误: {ex.Message}");
+                Console.WriteLine($"堆栈跟踪: {ex.StackTrace}");
+                if (ex.InnerException != null)
+                {
+                    Console.WriteLine($"内部错误: {ex.InnerException.Message}");
+                }
+                
                 return StatusCode(500, new { error = "内部服务器错误", details = ex.Message });
             }
         }
@@ -543,6 +565,44 @@ namespace stripeapi.Controllers
             catch (Exception ex)
             {
                 return StatusCode(500, new { error = "内部服务器错误", details = ex.Message });
+            }
+        }
+        
+        /// <summary>
+        /// 为Connect账户添加银行账户（简化版）
+        /// </summary>
+        /// <returns>创建的银行账户信息</returns>
+        [HttpGet("simple-add-bank")]
+        public async Task<IActionResult> AddBankAccountSimple(
+            [FromQuery] string accountId,
+            [FromQuery] string tokenId)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(accountId) || string.IsNullOrEmpty(tokenId))
+                {
+                    return BadRequest(new { error = "账户ID和Token ID不能为空" });
+                }
+                
+                var service = new AccountService();
+                
+                // 不使用AddExtraParam方法，而是直接设置ExternalAccount属性
+                var options = new AccountUpdateOptions
+                {
+                    ExternalAccount = tokenId
+                };
+                
+                var account = await service.UpdateAsync(accountId, options);
+                
+                return Ok(new { 
+                    success = true, 
+                    accountId = account.Id,
+                    externalAccountsCount = account.ExternalAccounts?.Data?.Count ?? 0
+                });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { error = ex.Message });
             }
         }
     }
