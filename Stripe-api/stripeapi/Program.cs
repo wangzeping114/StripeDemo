@@ -1,6 +1,12 @@
+using Microsoft.EntityFrameworkCore;
 using Stripe;
 
 var builder = WebApplication.CreateBuilder(args);
+// 配置数据库连接字符串
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+builder.Services.AddDbContext<ApplicationDbContext>(options =>
+    options.UseSqlServer(connectionString));
+
 var stripeKey = builder.Configuration.GetValue<string>("Stripe:SecretKey");
 await UisingKeys(stripeKey);
 builder.Services.AddCors(options =>
@@ -30,7 +36,6 @@ static async Task UisingKeys(string stripeKey)
         throw new ArgumentNullException(nameof(stripeKey), "Stripe secret key is not set.");
     }
     StripeConfiguration.ApiKey = stripeKey;
-    // ��������������� Stripe ��ʼ������
     var customerService = new CustomerService();
     var createOptions = new CustomerCreateOptions
     {

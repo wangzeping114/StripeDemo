@@ -1,9 +1,9 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using Stripe;
 using stripeapi.Dtos;
-using System.IO;
-using System.Threading.Tasks;
-using System.Linq;
+using stripeapi.Entity;
 
 namespace stripeapi.Controllers
 {
@@ -11,8 +11,17 @@ namespace stripeapi.Controllers
     /// 提供Stripe Connect相关的API接口
     /// </summary>
     [Route("api/[controller]")]
+    [Authorize] // 添加授权特性，要求用户必须登录
     public class ConnectController : ControllerBase
     {
+        private readonly ApplicationDbContext _dbContext;
+
+        public ConnectController(ApplicationDbContext dbContext)
+        {
+            _dbContext = dbContext;
+        }
+        
+        
         /// <summary>
         /// 创建Stripe Connect Custom账户
         /// </summary>
@@ -28,11 +37,51 @@ namespace stripeapi.Controllers
         {
             try
             {
+                //// 获取当前登录用户
+                //string userId = GetCurrentUserId();
+                if(!request.UserId.HasValue)
+                {
+                    throw new ArgumentNullException(nameof(request.UserId), "用户ID不能为空");
+                }
+                // 检查用户是否已有Connect账户
+                var account = await _dbContext.Accounts.FirstOrDefaultAsync(a => a.ID == request.UserId.Value);
+                if (account != null && !string.IsNullOrEmpty(account.StripeConnectAccountId))
+                {
+                    // 用户已有Connect账户，获取账户信息并直接返回
+                    var existingService = new AccountService();
+                    var existingAccount = await existingService.GetAsync(account.StripeConnectAccountId);
+                    
+                    // 获取关联的钱包账户
+                    var existingProfitAccount = await _dbContext.ProfitAccounts.FirstOrDefaultAsync(a => a.UserId == request.UserId.Value.ToString()); // await _profitAccountService.GetByUserIdAsync(userId);
+
+                    return Ok(new 
+                    {
+                        accountId = existingAccount.Id,
+                        email = existingAccount.Email,
+                        country = existingAccount.Country,
+                        defaultCurrency = existingAccount.DefaultCurrency,
+                        capabilities = existingAccount.Capabilities,
+                        chargesEnabled = existingAccount.ChargesEnabled,
+                        payoutsEnabled = existingAccount.PayoutsEnabled,
+                        requirementsDisabled = existingAccount.Requirements.DisabledReason,
+                        requirementsPending = existingAccount.Requirements.PendingVerification,
+                        requirementsCurrentlyDue = existingAccount.Requirements.CurrentlyDue,
+                        // 如果有钱包账户，也返回钱包信息
+                        wallet = existingProfitAccount != null ? new {
+                            balance = existingProfitAccount.WalletValue,
+                            currency = existingProfitAccount.CurrencyCode
+                        } : null,
+                        // 添加标记表明这是已存在的账户
+                        isExisting = true
+                    });
+                }
+                
+                // 使用用户信息构建Stripe Connect账户请求
                 var options = new AccountCreateOptions
                 {
                     Type = request.Type,
                     Country = request.Country,
-                    Email = request.Email,
+                    Email = account.Mail, // 使用用户注册邮箱
                     DefaultCurrency = request.DefaultCurrency,
                     BusinessType = "individual", // 或 "company"，根据实际需要设置
                     
@@ -57,35 +106,61 @@ namespace stripeapi.Controllers
                     
                     TosAcceptance = request.TosAcceptance ? new AccountTosAcceptanceOptions
                     {
-                        // 直接使用DateTime类型
                         Date = DateTime.UtcNow,
                         Ip = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "127.0.0.1"
                     } : null,
                     
-                    Metadata = request.Metadata
+                    Metadata = new Dictionary<string, string>
+                    {
+                        { "user_id",account.ID.ToString()  }
+                    }
                 };
                 
                 if (!string.IsNullOrEmpty(request.BusinessId))
                 {
-                    options.Metadata = options.Metadata ?? new Dictionary<string, string>();
                     options.Metadata.Add("business_id", request.BusinessId);
                 }
                 
+                // 调用Stripe API创建Connect账户
                 var service = new AccountService();
-                var account = await service.CreateAsync(options);
+                var stripeAccount = await service.CreateAsync(options);
+                
+                // 更新用户信息，关联Connect账户
+                account.StripeConnectAccountId = stripeAccount.Id;
+                _dbContext.Accounts.Update(account); // _accountService.UpdateAsync(account);
+                
+                // 为用户创建ProfitAccount(钱包账户)，如果不存在
+                var profitAccount =  await _dbContext.ProfitAccounts.FirstOrDefaultAsync(x=>x.UserId==request.UserId.ToString());
+                if (profitAccount == null)
+                {
+                    profitAccount = new ProfitAccount
+                    {
+                        UserId = account.ID.ToString(),
+                        ConnectAccountId = stripeAccount.Id,
+                        WalletValue = 0,
+                        CurrencyCode = request.DefaultCurrency.ToLower()
+                    };
+                      _dbContext.ProfitAccounts.Update(profitAccount);
+                }
+                else
+                {
+                    // 如果已存在钱包账户，只更新关联的Connect账户ID
+                    profitAccount.ConnectAccountId = stripeAccount.Id;
+                    _dbContext.ProfitAccounts.Update(profitAccount);
+                }
                 
                 return Ok(new 
                 {
-                    accountId = account.Id,
-                    email = account.Email,
-                    country = account.Country,
-                    defaultCurrency = account.DefaultCurrency,
-                    capabilities = account.Capabilities,
-                    chargesEnabled = account.ChargesEnabled,
-                    payoutsEnabled = account.PayoutsEnabled,
-                    requirementsDisabled = account.Requirements.DisabledReason,
-                    requirementsPending = account.Requirements.PendingVerification,
-                    requirementsCurrentlyDue = account.Requirements.CurrentlyDue
+                    accountId = stripeAccount.Id,
+                    email = stripeAccount.Email,
+                    country = stripeAccount.Country,
+                    defaultCurrency = stripeAccount.DefaultCurrency,
+                    capabilities = stripeAccount.Capabilities,
+                    chargesEnabled = stripeAccount.ChargesEnabled,
+                    payoutsEnabled = stripeAccount.PayoutsEnabled,
+                    requirementsDisabled = stripeAccount.Requirements.DisabledReason,
+                    requirementsPending = stripeAccount.Requirements.PendingVerification,
+                    requirementsCurrentlyDue = stripeAccount.Requirements.CurrentlyDue
                 });
             }
             catch (StripeException ex)
@@ -101,7 +176,6 @@ namespace stripeapi.Controllers
         /// <summary>
         /// 创建账户链接用于完成Connect账户验证
         /// </summary>
-        /// <param name="accountId">Connect账户ID</param>
         /// <param name="refreshUrl">验证失败后的重定向URL</param>
         /// <param name="returnUrl">验证成功后的重定向URL</param>
         /// <returns>账户链接URL</returns>
@@ -111,20 +185,28 @@ namespace stripeapi.Controllers
         /// </remarks>
         [HttpPost("create-account-link")]
         public async Task<IActionResult> CreateAccountLink(
-            [FromQuery] string accountId,
             [FromQuery] string refreshUrl,
-            [FromQuery] string returnUrl)
+            [FromQuery] string returnUrl,
+            [FromQuery] Guid? userId)
         {
             try
             {
-                if (string.IsNullOrEmpty(accountId))
+                // 获取当前登录用户
+                if(!userId.HasValue)
                 {
-                    return BadRequest(new { error = "Connect账户ID不能为空" });
+                    return BadRequest("用户ID不能为空");
+                }
+
+                // 查找用户关联的Connect账户
+                var account = await _dbContext.Accounts.FirstOrDefaultAsync(x => x.ID == userId); 
+                if (account == null || string.IsNullOrEmpty(account.StripeConnectAccountId))
+                {
+                    return BadRequest(new { error = "您还未创建Connect账户" });
                 }
                 
                 var options = new AccountLinkCreateOptions
                 {
-                    Account = accountId,
+                    Account = account.StripeConnectAccountId,
                     RefreshUrl = refreshUrl,
                     ReturnUrl = returnUrl,
                     Type = "account_onboarding",
@@ -147,39 +229,74 @@ namespace stripeapi.Controllers
         }
         
         /// <summary>
-        /// 向Connect账户转账
+        /// 向Connect账户转账(充值)
         /// </summary>
         /// <param name="request">转账请求</param>
         /// <returns>转账结果</returns>
         /// <remarks>
-        /// 该API用于从平台账户向Connect账户转账资金。
-        /// 通常用于向商家、创作者等支付佣金或结算款项。
-        /// 转账金额将从平台Stripe账户余额中扣除。
+        /// 该API用于从平台账户向用户的Connect账户转账资金。
+        /// 充值金额将实时同步至用户的ProfitAccount余额。
         /// </remarks>
         [HttpPost("create-transfer")]
         public async Task<IActionResult> CreateTransfer([FromBody] ConnectTransferRequest request)
         {
             try
             {
+                if (!request.UserId.HasValue)
+                {
+                    return BadRequest("用户ID不能为空");
+                }
+                // 查找用户关联的Connect账户和钱包账户
+                var account = await _dbContext.Accounts.FirstOrDefaultAsync(x => x.ID == request.UserId);
+                if (account == null || string.IsNullOrEmpty(account.StripeConnectAccountId))
+                {
+                    return BadRequest(new { error = "您还未创建Connect账户" });
+                }
+                
+                // 验证请求的目标账户是否为当前用户
+                if (request.Destination != account.StripeConnectAccountId)
+                {
+                    return BadRequest(new { error = "只能向自己的账户充值" });
+                }
+                
+                // 获取用户钱包账户
+                var profitAccount = await _dbContext.ProfitAccounts.FirstOrDefaultAsync(x => x.UserId == request.UserId.Value.ToString());
+                if (profitAccount == null)
+                {
+                    return BadRequest(new { error = "未找到您的钱包账户" });
+                }
+                
+                // 调用Stripe API进行转账
                 var options = new TransferCreateOptions
                 {
                     Amount = request.Amount,
                     Currency = request.Currency,
                     Destination = request.Destination,
-                    Description = request.Description,
+                    Description = request.Description ?? "游戏币充值",
                     SourceTransaction = request.SourceTransaction,
                     TransferGroup = request.TransferGroup,
-                    Metadata = request.Metadata
+                    Metadata = request.Metadata ?? new Dictionary<string, string> { { "user_id", request.UserId.Value.ToString() } }
                 };
-                
-                if (request.ApplicationFeeAmount.HasValue)
-                {
-                    // 这里需要在定义ConnectTransferRequest时添加ApplicationFeeAmount字段
-                    // 或者通过其他方式在平台内部处理费用
-                }
                 
                 var service = new TransferService();
                 var transfer = await service.CreateAsync(options);
+                
+                // 创建充值记录
+                var depositRecord = new DepositRecord
+                {
+                    UserId = request.UserId.Value.ToString(),
+                    Amount = transfer.Amount,
+                    CurrencyCode = transfer.Currency,
+                    Status = DepositStatus.Success,
+                    TransactionId = transfer.Id,
+                    ProfitAccountId = profitAccount.ID,
+                    Remark = transfer.Description,
+                    CreateBy = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")
+                };
+                await _dbContext.DepositRecords.AddAsync(depositRecord);
+
+                profitAccount.WalletValue+= depositRecord.Amount;
+                _dbContext.ProfitAccounts.Update(profitAccount);
                 
                 return Ok(new
                 {
@@ -189,7 +306,10 @@ namespace stripeapi.Controllers
                     destination = transfer.Destination,
                     created = transfer.Created,
                     reversed = transfer.Reversed,
-                    sourceType = transfer.SourceType
+                    sourceType = transfer.SourceType,
+                    // 返回更新后的钱包余额
+                    balance = profitAccount.WalletValue,
+                    depositRecordId = depositRecord.ID
                 });
             }
             catch (StripeException ex)
@@ -205,30 +325,60 @@ namespace stripeapi.Controllers
         /// <summary>
         /// 从Connect账户提现到银行账户
         /// </summary>
-        /// <param name="accountId">Connect账户ID</param>
         /// <param name="amount">提现金额（最小货币单位）</param>
         /// <param name="currency">货币类型，默认USD</param>
         /// <param name="destination">目标银行账户ID (可选)</param>
         /// <returns>提现结果</returns>
         /// <remarks>
-        /// 该API用于从Connect账户提现到已关联的银行账户。
-        /// 提现处理时间取决于银行和国家/地区，通常为1-7个工作日。
-        /// 需要先为Connect账户添加银行账户才能使用此功能。
+        /// 该API用于从用户的Connect账户提现到已关联的银行账户。
+        /// 提现金额将实时扣减用户的ProfitAccount余额。
         /// </remarks>
         [HttpPost("create-connected-payout")]
         public async Task<IActionResult> CreateConnectedPayout(
-            [FromQuery] string accountId,
             [FromQuery] long amount,
             [FromQuery] string currency = "usd",
-            [FromQuery] string? destination = null)
+            [FromQuery] string? destination = null,
+            [FromQuery] Guid? userId=null)
         {
             try
             {
-                if (string.IsNullOrEmpty(accountId))
+                // 获取当前登录用户 
+                if (!userId.HasValue)
                 {
-                    return BadRequest(new { error = "Connect账户ID不能为空" });
+                    return BadRequest("用户ID不能为空");
+                }
+                // 查找用户关联的Connect账户和钱包账户
+                var account = await _dbContext.Accounts.FirstOrDefaultAsync(x => x.ID == userId);
+                if (account == null || string.IsNullOrEmpty(account.StripeConnectAccountId))
+                {
+                    return BadRequest(new { error = "您还未创建Connect账户" });
+                }
+
+                // 获取用户钱包账户
+                var profitAccount = await _dbContext.ProfitAccounts.FirstOrDefaultAsync(x => x.UserId == userId.Value.ToString());
+                if (profitAccount == null)
+                {
+                    return BadRequest(new { error = "未找到您的钱包账户" });
+                }
+
+                // 检查余额是否足够
+                if (profitAccount.WalletValue < amount)
+                {
+                    return BadRequest(new { error = $"余额不足，当前余额: {profitAccount.WalletValue / 100.0m} {profitAccount.CurrencyCode.ToUpper()}" });
                 }
                 
+                // 检查银行账户
+                if (string.IsNullOrEmpty(destination))
+                {
+                    // 检查用户是否有默认银行账户
+                    //var hasBankAccount = await CheckUserHasBankAccountAsync(account.StripeConnectAccountId);
+                    //if (!hasBankAccount)
+                    //{
+                    //    return BadRequest(new { error = "您还未添加银行账户，请先添加提现银行卡" });
+                    //}
+                }
+                
+                // 调用Stripe API创建提现
                 var options = new PayoutCreateOptions
                 {
                     Amount = amount,
@@ -238,12 +388,28 @@ namespace stripeapi.Controllers
                 
                 var requestOptions = new RequestOptions
                 {
-                    StripeAccount = accountId // 指定为哪个Connect账户创建提现
+                    StripeAccount = account.StripeConnectAccountId
                 };
                 
                 var service = new PayoutService();
                 var payout = await service.CreateAsync(options, requestOptions);
                 
+                // 创建提现记录
+                var withdrawRecord = new WithdrawRecord
+                {
+                    UserId = userId.Value.ToString(),
+                    Amount = payout.Amount,
+                    CurrencyCode = payout.Currency,
+                    Status = WithdrawStatus.Success,
+                    PayoutId = payout.Id,
+                    ProfitAccountId = profitAccount.ID,
+                    BankAccountId = payout.Destination?.ToString() ?? "default",
+                    CreateTime = DateTime.Now,
+                };
+                await _dbContext.WithdrawRecords.AddAsync(withdrawRecord);
+
+                profitAccount.WalletValue -= withdrawRecord.Amount;
+                _dbContext.ProfitAccounts.Update(profitAccount);
                 return Ok(new
                 {
                     payoutId = payout.Id,
@@ -252,7 +418,9 @@ namespace stripeapi.Controllers
                     arrivalDate = payout.ArrivalDate,
                     status = payout.Status,
                     destination = payout.Destination,
-                    connectAccountId = accountId
+                    // 返回更新后的钱包余额
+                    balance = profitAccount.WalletValue,
+                    withdrawRecordId = withdrawRecord.ID
                 });
             }
             catch (StripeException ex)
@@ -265,48 +433,303 @@ namespace stripeapi.Controllers
             }
         }
         
+        // 检查用户是否有银行账户
+        //private async Task<bool> CheckUserHasBankAccountAsync(string connectAccountId)
+        //{
+        //    var externalAccountService = new ExternalAccountService();
+        //    var options = new ExternalAccountListOptions
+        //    {
+        //        Object = "bank_account",
+        //        Limit = 1
+        //    };
+            
+        //    var requestOptions = new RequestOptions
+        //    {
+        //        StripeAccount = connectAccountId
+        //    };
+            
+        //    var accounts = await externalAccountService.ListAsync(options, requestOptions);
+        //    return accounts.Data.Count > 0;
+        //}
+        
         /// <summary>
-        /// 获取Connect账户余额
+        /// 处理Connect账户相关的Webhook事件
         /// </summary>
-        /// <param name="accountId">Connect账户ID</param>
-        /// <returns>账户余额信息</returns>
+        /// <returns>处理结果</returns>
         /// <remarks>
-        /// 该API用于查询Connect账户的可用余额和待结算余额。
-        /// 可用余额可以提现，待结算余额需要等待结算周期完成后才可以提现。
+        /// 该API用于接收和处理Stripe的Webhook事件通知，特别是Connect账户相关的事件。
+        /// 事件处理中会同步更新用户钱包余额、充值和提现记录状态。
         /// </remarks>
-        [HttpGet("balance/{accountId}")]
-        public async Task<IActionResult> GetConnectBalance(string accountId)
+        [HttpPost("webhook")]
+        [AllowAnonymous] // Webhook不需要授权
+        public async Task<IActionResult> HandleConnectWebhook()
         {
             try
             {
-                if (string.IsNullOrEmpty(accountId))
+                var json = await new StreamReader(HttpContext.Request.Body).ReadToEndAsync();
+                
+                // 获取Stripe签名，用于验证请求来源
+                string stripeSignature = Request.Headers["Stripe-Signature"];
+                
+                // 替换为你在Stripe Dashboard中设置的Webhook密钥
+                string webhookSecret = "whsec_your_connect_webhook_secret_key";
+                
+                // 构造Stripe事件
+                var stripeEvent = EventUtility.ConstructEvent(
+                    json,
+                    stripeSignature,
+                    webhookSecret
+                );
+                
+                // 处理不同类型的Connect事件
+                switch (stripeEvent.Type)
                 {
-                    return BadRequest(new { error = "Connect账户ID不能为空" });
+                    case "account.updated":
+                        var account = stripeEvent.Data.Object as stripeapi.Entity.Account;
+                        await HandleAccountUpdatedAsync(account);
+                        break;
+                        
+                    case "transfer.created":
+                        var transfer = stripeEvent.Data.Object as Transfer;
+                        await HandleTransferCreatedAsync(transfer);
+                        break;
+                        
+                    case "transfer.paid":
+                        var paidTransfer = stripeEvent.Data.Object as Transfer;
+                        await HandleTransferPaidAsync(paidTransfer);
+                        break;
+                        
+                    case "transfer.failed":
+                        var failedTransfer = stripeEvent.Data.Object as Transfer;
+                        await HandleTransferFailedAsync(failedTransfer);
+                        break;
+                        
+                    case "payout.created":
+                        var payout = stripeEvent.Data.Object as Payout;
+                        await HandlePayoutCreatedAsync(payout);
+                        break;
+                        
+                    case "payout.paid":
+                        var paidPayout = stripeEvent.Data.Object as Payout;
+                        await HandlePayoutPaidAsync(paidPayout);
+                        break;
+                        
+                    case "payout.failed":
+                        var failedPayout = stripeEvent.Data.Object as Payout;
+                        await HandlePayoutFailedAsync(failedPayout);
+                        break;
+                        
+                    case "payout.canceled":
+                        var canceledPayout = stripeEvent.Data.Object as Payout;
+                        await HandlePayoutCanceledAsync(canceledPayout);
+                        break;
+                }
+                
+                return Ok(new { received = true });
+            }
+            catch (StripeException ex)
+            {
+                return BadRequest(new { error = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = "内部服务器错误", details = ex.Message });
+            }
+        }
+        
+        // 处理账户更新事件
+        private async Task HandleAccountUpdatedAsync(stripeapi.Entity.Account account)
+        {
+            // 更新系统中的Connect账户状态
+            var user = await _dbContext.Accounts.FirstOrDefaultAsync(x => x.ID == account.ID);
+            if (user != null)
+            {
+                
+            }
+        }
+        
+        // 处理转账创建事件
+        private async Task HandleTransferCreatedAsync(Transfer transfer)
+        {
+            // 查找充值记录
+            var depositRecord = await _dbContext.DepositRecords.FirstOrDefaultAsync(x => x.ID == Guid.Parse(transfer.Id)); 
+            if (depositRecord != null)
+            {
+              
+            }
+        }
+        
+        // 处理转账成功事件
+        private async Task HandleTransferPaidAsync(Transfer transfer)
+        {
+            // 更新充值记录状态
+            var depositRecord = await _dbContext.DepositRecords.FirstOrDefaultAsync(x => x.ID == Guid.Parse(transfer.Id));
+            if (depositRecord != null)
+            {
+                depositRecord.Status = DepositStatus.Success; //"paid";
+                depositRecord.CreateTime = DateTime.Now;
+                _dbContext.DepositRecords.Update(depositRecord);
+            }
+        }
+        
+        // 处理转账失败事件
+        private async Task HandleTransferFailedAsync(Transfer transfer)
+        {
+            // 查找充值记录
+            var depositRecord = await _dbContext.DepositRecords.FirstOrDefaultAsync(x => x.ID == Guid.Parse(transfer.Id));
+            if (depositRecord != null)
+            {
+                depositRecord.Status = DepositStatus.Failed;
+                depositRecord.CreateTime = DateTime.UtcNow;
+                _dbContext.DepositRecords.Update(depositRecord);
+           
+                // 回滚钱包余额
+                var profitAccount = await _dbContext.ProfitAccounts.FirstOrDefaultAsync(x => x.ID == depositRecord.ProfitAccountId);
+                if (profitAccount != null)
+                {
+                    profitAccount.WalletValue -= depositRecord.Amount;
+                    _dbContext.ProfitAccounts.Update(profitAccount);
+                }
+            }
+        }
+        
+        // 处理提现创建事件
+        private async Task HandlePayoutCreatedAsync(Payout payout)
+        {
+            var withdrawRecord = await _dbContext.WithdrawRecords.FirstOrDefaultAsync(x => x.ID == Guid.Parse(payout.Id));
+            // 查找提现记录
+          
+            if (withdrawRecord != null)
+            {
+                withdrawRecord.Status = WithdrawStatus.Pending;
+                withdrawRecord.CreateTime = DateTime.Now;
+                _dbContext.WithdrawRecords.Update(withdrawRecord);
+            }
+        }
+        
+        // 处理提现成功事件
+        private async Task HandlePayoutPaidAsync(Payout payout)
+        {
+            // 更新提现记录状态
+            var withdrawRecord = await _dbContext.WithdrawRecords.FirstOrDefaultAsync(x => x.ID == Guid.Parse(payout.Id));
+            if (withdrawRecord != null)
+            {
+                withdrawRecord.Status = WithdrawStatus.Success;
+                withdrawRecord.CompletedAt = DateTime.Now;
+                withdrawRecord.UpdateTime = DateTime.Now;
+                _dbContext.WithdrawRecords.Update(withdrawRecord);
+            }
+        }
+        
+        // 处理提现失败事件
+        private async Task HandlePayoutFailedAsync(Payout payout)
+        {
+            // 查找提现记录
+            var withdrawRecord = await _dbContext.WithdrawRecords.FirstOrDefaultAsync(x => x.ID == Guid.Parse(payout.Id));
+            if (withdrawRecord != null)
+            {
+                withdrawRecord.Status = WithdrawStatus.Failed;
+                withdrawRecord.ErrorMessage = payout.FailureMessage;
+                withdrawRecord.UpdateTime = DateTime.Now;
+                _dbContext.WithdrawRecords.Update(withdrawRecord);
+                
+                // 回滚钱包余额
+                var profitAccount = await _dbContext.ProfitAccounts.FirstOrDefaultAsync(x=>x.ID==withdrawRecord.ProfitAccountId);
+                if (profitAccount != null)
+                {
+                    profitAccount.WalletValue -= withdrawRecord.Amount;
+                    // 退款到钱包余额
+                    _dbContext.ProfitAccounts.Update(profitAccount);
+                }
+            }
+        }
+        
+        // 处理提现取消事件
+        private async Task HandlePayoutCanceledAsync(Payout payout)
+        {
+            // 查找提现记录
+            var withdrawRecord = await _dbContext.WithdrawRecords.FirstOrDefaultAsync(x => x.ID == Guid.Parse(payout.Id));
+            if (withdrawRecord != null)
+            {
+                withdrawRecord.Status = WithdrawStatus.Rejected; // //"canceled";
+                withdrawRecord.UpdateTime = DateTime.Now;
+                _dbContext.WithdrawRecords.Update(withdrawRecord);
+                
+                // 回滚钱包余额
+                var profitAccount = await _dbContext.ProfitAccounts.FirstOrDefaultAsync(x=>x.ID==withdrawRecord.ProfitAccountId);
+                if (profitAccount != null)
+                {
+                    profitAccount.WalletValue -= withdrawRecord.Amount;
+                    // 退款到钱包余额
+                    _dbContext.ProfitAccounts.Update(profitAccount);
+                }
+            }
+        }
+        
+        /// <summary>
+        /// 获取Connect账户余额
+        /// </summary>
+        /// <returns>账户余额信息</returns>
+        /// <remarks>
+        /// 该API用于查询当前用户Connect账户的可用余额和待结算余额。
+        /// 可用余额可以提现，待结算余额需要等待结算周期完成后才可以提现。
+        /// </remarks>
+        [HttpGet("balance")]
+        public async Task<IActionResult> GetConnectBalance(Guid? userid)
+        {
+            try
+            {
+                // 获取当前登录用户
+                if(!userid.HasValue)
+                {
+                    return BadRequest("用户ID不能为空");
+                }
+
+                // 查找用户关联的Connect账户
+                var account = await _dbContext.Accounts.FirstOrDefaultAsync(x => x.ID == userid.Value);
+                if (account == null || string.IsNullOrEmpty(account.StripeConnectAccountId))
+                {
+                    return BadRequest(new { error = "您还未创建Connect账户" });
                 }
                 
                 var requestOptions = new RequestOptions
                 {
-                    StripeAccount = accountId
+                    StripeAccount = account.StripeConnectAccountId
                 };
                 
                 var service = new BalanceService();
                 var balance = await service.GetAsync(requestOptions);
+
+                // 获取钱包账户余额
+                var profitAccount = await _dbContext.ProfitAccounts.FirstOrDefaultAsync(x => x.UserId == userid.Value.ToString()); 
+                
                 var balanceInfo = new
                 {
-
+                    // 可用余额列表(可能包含多种货币)
                     available = balance.Available.Select(b => new
                     {
                         amount = b.Amount,
                         currency = b.Currency,
                         sourceTypes = b.SourceTypes
-                    }),
+                    }).ToList(),
+                    
+                    // 待结算余额列表(可能包含多种货币)
                     pending = balance.Pending.Select(b => new
                     {
                         amount = b.Amount,
                         currency = b.Currency,
                         sourceTypes = b.SourceTypes
-                    }),
-                    connectAccountId = accountId
+                    }).ToList(),
+                    
+                    // Connect账户ID
+                    connectAccountId = account.StripeConnectAccountId,
+                    
+                    // 钱包余额信息
+                    wallet = profitAccount != null ? new {
+                        balance = profitAccount.WalletValue,
+                        currency = profitAccount.CurrencyCode,
+                        updatedAt = profitAccount.UpdateTime
+                    } : null
                 };
 
                 return Ok(balanceInfo);
@@ -415,97 +838,6 @@ namespace stripeapi.Controllers
                     Console.WriteLine($"内部错误: {ex.InnerException.Message}");
                 }
                 
-                return StatusCode(500, new { error = "内部服务器错误", details = ex.Message });
-            }
-        }
-        
-        /// <summary>
-        /// 处理Connect账户相关的Webhook事件
-        /// </summary>
-        /// <returns>处理结果</returns>
-        /// <remarks>
-        /// 该API用于接收和处理Stripe的Webhook事件通知，特别是Connect账户相关的事件。
-        /// 需要在Stripe后台配置Webhook，URL指向该接口，并选择connect相关事件类型。
-        /// </remarks>
-        [HttpPost("webhook")]
-        public async Task<IActionResult> HandleConnectWebhook()
-        {
-            try
-            {
-                var json = await new StreamReader(HttpContext.Request.Body).ReadToEndAsync();
-                
-                // 获取Stripe签名，用于验证请求来源
-                string stripeSignature = Request.Headers["Stripe-Signature"];
-                
-                // 替换为你在Stripe Dashboard中设置的Webhook密钥
-                string webhookSecret = "whsec_your_connect_webhook_secret_key";
-                
-                // 构造Stripe事件
-                var stripeEvent = EventUtility.ConstructEvent(
-                    json,
-                    stripeSignature,
-                    webhookSecret
-                );
-                
-                // 处理不同类型的Connect事件
-                switch (stripeEvent.Type)
-                {
-                    case "account.updated":
-                        var account = stripeEvent.Data.Object as Account;
-                        Console.WriteLine($"Connect账户已更新: {account.Id}, 支付已启用: {account.ChargesEnabled}, 提现已启用: {account.PayoutsEnabled}");
-                        // 处理账户更新逻辑
-                        // await _connectAccountRepository.UpdateStatusAsync(account.Id, account.ChargesEnabled, account.PayoutsEnabled);
-                        break;
-                        
-                    case "account.application.deauthorized":
-                        var deauthorizedAccount = stripeEvent.Data.Object as Account;
-                        Console.WriteLine($"Connect账户已解除授权: {deauthorizedAccount.Id}");
-                        // 处理账户解除授权逻辑
-                        // await _connectAccountRepository.DeactivateAsync(deauthorizedAccount.Id);
-                        break;
-                        
-                    case "account.external_account.created":
-                        var externalAccountObj = stripeEvent.Data.Object;
-                        // 根据外部账户类型处理（可能是银行账户或卡）
-                        if (externalAccountObj is BankAccount bankAccount)
-                        {
-                            Console.WriteLine($"Connect账户添加了新的银行账户: {bankAccount.Id}");
-                            // 处理银行账户创建逻辑
-                        }
-                        else if (externalAccountObj is Card card)
-                        {
-                            Console.WriteLine($"Connect账户添加了新的卡: {card.Id}");
-                            // 处理卡创建逻辑
-                        }
-                        break;
-                        
-                    case "transfer.created":
-                        var transfer = stripeEvent.Data.Object as Transfer;
-                        Console.WriteLine($"转账已创建: {transfer.Id}, 金额: {transfer.Amount / 100.0m} {transfer.Currency}");
-                        // 处理转账创建逻辑
-                        break;
-                        
-                    case "transfer.paid":
-                        var paidTransfer = stripeEvent.Data.Object as Transfer;
-                        Console.WriteLine($"转账已完成: {paidTransfer.Id}");
-                        // 处理转账完成逻辑
-                        break;
-                        
-                    case "transfer.failed":
-                        var failedTransfer = stripeEvent.Data.Object as Transfer;
-                        Console.WriteLine($"转账失败: {failedTransfer.Id}");
-                        // 处理转账失败逻辑
-                        break;
-                }
-                
-                return Ok(new { received = true });
-            }
-            catch (StripeException ex)
-            {
-                return BadRequest(new { error = ex.Message });
-            }
-            catch (Exception ex)
-            {
                 return StatusCode(500, new { error = "内部服务器错误", details = ex.Message });
             }
         }

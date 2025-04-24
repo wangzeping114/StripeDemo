@@ -5,6 +5,7 @@ namespace stripeapi.Dtos
     /// </summary>
     public class ConnectAccountCreateRequest
     {
+        public Guid? UserId { get; set; }
         /// <summary>
         /// 账户类型，对于Custom模式应为"custom"
         /// </summary>

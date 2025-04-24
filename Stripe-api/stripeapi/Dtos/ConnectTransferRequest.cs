@@ -5,6 +5,7 @@ namespace stripeapi.Dtos
     /// </summary>
     public class ConnectTransferRequest
     {
+        public Guid? UserId { get; set; } 
         /// <summary>
         /// 转账金额，单位为最小货币单位（如：分，美元是"美分"）
         /// </summary>
