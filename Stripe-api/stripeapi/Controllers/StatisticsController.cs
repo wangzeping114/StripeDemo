@@ -34,6 +34,16 @@ namespace stripeapi.Controllers
                 return BadRequest("结束时间不能早于开始时间");
             }
 
+            // 确保页码和页大小有效
+            if (request.PageIndex < 1)
+            {
+                request.PageIndex = 1;
+            }
+            if (request.PageSize < 1)
+            {
+                request.PageSize = 20;
+            }
+
             // 查询充值记录
             var depositQuery = _context.DepositRecords.AsQueryable();
             // 查询提现记录
@@ -74,8 +84,11 @@ namespace stripeapi.Controllers
             var withdrawGroups = GroupByPeriod(withdraws, request.Granularity);
 
             // 合并充值和提现的统计结果
-            var allPeriods = depositGroups.Keys.Union(withdrawGroups.Keys).OrderBy(p => p).ToList();
+            var allPeriods = depositGroups.Keys.Union(withdrawGroups.Keys).OrderByDescending(p => p).ToList();
             
+            // 构建所有分组的统计项
+            var allItems = new List<TransactionStatisticsItem>();
+
             foreach (var period in allPeriods)
             {
                 var statisticsItem = new TransactionStatisticsItem
@@ -104,10 +117,27 @@ namespace stripeapi.Controllers
                 // 计算净收入
                 statisticsItem.NetIncome = statisticsItem.TotalDeposit - statisticsItem.TotalWithdraw;
 
-                response.Items.Add(statisticsItem);
+                allItems.Add(statisticsItem);
             }
 
-            // 计算汇总信息
+            // 计算分页信息
+            int totalCount = allItems.Count;
+            int totalPages = (int)Math.Ceiling(totalCount / (double)request.PageSize);
+            
+            // 应用分页
+            var pagedItems = allItems
+                .Skip((request.PageIndex - 1) * request.PageSize)
+                .Take(request.PageSize)
+                .ToList();
+
+            // 设置分页信息
+            response.Items = pagedItems;
+            response.PageIndex = request.PageIndex;
+            response.PageSize = request.PageSize;
+            response.TotalCount = totalCount;
+            response.TotalPages = totalPages;
+
+            // 计算汇总信息（汇总信息始终包含所有数据，不分页）
             var maxDepositRecord = deposits.Count > 0 ? deposits.OrderByDescending(d => d.Amount).FirstOrDefault() : null;
             var maxWithdrawRecord = withdraws.Count > 0 ? withdraws.OrderByDescending(w => w.Amount).FirstOrDefault() : null;
 

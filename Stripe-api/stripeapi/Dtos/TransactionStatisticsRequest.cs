@@ -31,6 +31,16 @@ namespace stripeapi.Dtos
         /// 时间粒度（日、月、年），默认日
         /// </summary>
         public TimeGranularity Granularity { get; set; } = TimeGranularity.Day;
+
+        /// <summary>
+        /// 页码，从1开始
+        /// </summary>
+        public int PageIndex { get; set; } = 1;
+
+        /// <summary>
+        /// 每页记录数
+        /// </summary>
+        public int PageSize { get; set; } = 20;
     }
 
     /// <summary>

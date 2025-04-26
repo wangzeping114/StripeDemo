@@ -17,6 +17,26 @@ namespace stripeapi.Dtos
         /// 汇总信息
         /// </summary>
         public TransactionSummary Summary { get; set; } = new TransactionSummary();
+
+        /// <summary>
+        /// 当前页码
+        /// </summary>
+        public int PageIndex { get; set; }
+
+        /// <summary>
+        /// 每页记录数
+        /// </summary>
+        public int PageSize { get; set; }
+
+        /// <summary>
+        /// 总记录数
+        /// </summary>
+        public int TotalCount { get; set; }
+
+        /// <summary>
+        /// 总页数
+        /// </summary>
+        public int TotalPages { get; set; }
     }
 
     /// <summary>
