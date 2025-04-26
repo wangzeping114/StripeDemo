@@ -641,6 +641,7 @@ namespace stripeapi.Controllers
                     // 退款到钱包余额
                     _dbContext.ProfitAccounts.Update(profitAccount);
                 }
+                await _dbContext.SaveChangesAsync(); // 保存所有更改
             }
         }
         
@@ -897,44 +898,6 @@ namespace stripeapi.Controllers
             catch (Exception ex)
             {
                 return StatusCode(500, new { error = "内部服务器错误", details = ex.Message });
-            }
-        }
-        
-        /// <summary>
-        /// 为Connect账户添加银行账户（简化版）
-        /// </summary>
-        /// <returns>创建的银行账户信息</returns>
-        [HttpGet("simple-add-bank")]
-        public async Task<IActionResult> AddBankAccountSimple(
-            [FromQuery] string accountId,
-            [FromQuery] string tokenId)
-        {
-            try
-            {
-                if (string.IsNullOrEmpty(accountId) || string.IsNullOrEmpty(tokenId))
-                {
-                    return BadRequest(new { error = "账户ID和Token ID不能为空" });
-                }
-                
-                var service = new AccountService();
-                
-                // 不使用AddExtraParam方法，而是直接设置ExternalAccount属性
-                var options = new AccountUpdateOptions
-                {
-                    ExternalAccount = tokenId
-                };
-                
-                var account = await service.UpdateAsync(accountId, options);
-                
-                return Ok(new { 
-                    success = true, 
-                    accountId = account.Id,
-                    externalAccountsCount = account.ExternalAccounts?.Data?.Count ?? 0
-                });
-            }
-            catch (Exception ex)
-            {
-                return BadRequest(new { error = ex.Message });
             }
         }
     }
