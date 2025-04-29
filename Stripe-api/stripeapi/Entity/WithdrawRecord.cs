@@ -16,6 +16,16 @@ namespace stripeapi.Entity
         public string UserId { get; set; }
 
         /// <summary>
+        /// 代理账号ID
+        /// </summary>
+        public string AgentId { get; set; }
+
+        /// <summary>
+        /// 代理账号
+        /// </summary>
+        public string AgentAccount { get; set; }
+
+        /// <summary>
         /// 币种（如：USD, CNY, EUR）
         /// </summary>
         [Required]

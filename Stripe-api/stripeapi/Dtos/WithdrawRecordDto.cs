@@ -92,7 +92,7 @@ namespace stripeapi.Dtos
 
             return new WithdrawRecordDto
             {
-                Id = entity.Id,
+                Id = entity.ID,
                 UserId = entity.UserId,
                 Amount = entity.Amount,
                 CurrencyCode = entity.CurrencyCode,
@@ -106,7 +106,7 @@ namespace stripeapi.Dtos
                 IpAddress = entity.IpAddress,
                 ErrorMessage = entity.ErrorMessage,
                 CompletedAt = entity.CompletedAt,
-                CreateTime = entity.CreateTime
+                CreateTime = entity.CreateTime??DateTime.Now
             };
         }
 

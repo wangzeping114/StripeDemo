@@ -103,6 +103,13 @@ namespace stripeapi.Controllers
                     statisticsItem.DepositCount = depositGroup.Count;
                     // 计算最大单笔充值
                     statisticsItem.MaxDepositAmount = depositGroup.Count > 0 ? depositGroup.Max(d => d.Amount) : 0;
+                    // 获取代理人信息（使用第一条记录的代理人信息）
+                    var firstDeposit = depositGroup.FirstOrDefault();
+                    if (firstDeposit != null)
+                    {
+                        statisticsItem.AgentId = firstDeposit.AgentId;
+                        statisticsItem.AgentAccount = firstDeposit.AgentAccount;
+                    }
                 }
 
                 // 添加提现数据
@@ -112,6 +119,16 @@ namespace stripeapi.Controllers
                     statisticsItem.WithdrawCount = withdrawGroup.Count;
                     // 计算最大单笔提现
                     statisticsItem.MaxWithdrawAmount = withdrawGroup.Count > 0 ? withdrawGroup.Max(w => w.Amount) : 0;
+                    // 如果还没有代理人信息，使用提现记录的代理人信息
+                    if (string.IsNullOrEmpty(statisticsItem.AgentId))
+                    {
+                        var firstWithdraw = withdrawGroup.FirstOrDefault();
+                        if (firstWithdraw != null)
+                        {
+                            statisticsItem.AgentId = firstWithdraw.AgentId;
+                            statisticsItem.AgentAccount = firstWithdraw.AgentAccount;
+                        }
+                    }
                 }
 
                 // 计算净收入
@@ -148,12 +165,16 @@ namespace stripeapi.Controllers
                 MaxDepositAmount = maxDepositRecord?.Amount ?? 0,
                 MaxDepositTime = maxDepositRecord?.ConfirmedTime,
                 MaxDepositUserId = maxDepositRecord?.UserId,
+                MaxDepositAgentId = maxDepositRecord?.AgentId,
+                MaxDepositAgentAccount = maxDepositRecord?.AgentAccount,
                 
                 TotalWithdraw = withdraws.Sum(w => w.Amount),
                 TotalWithdrawCount = withdraws.Count,
                 MaxWithdrawAmount = maxWithdrawRecord?.Amount ?? 0,
                 MaxWithdrawTime = maxWithdrawRecord?.ProcessedTime,
                 MaxWithdrawUserId = maxWithdrawRecord?.UserId,
+                MaxWithdrawAgentId = maxWithdrawRecord?.AgentId,
+                MaxWithdrawAgentAccount = maxWithdrawRecord?.AgentAccount,
                 
                 NetIncome = deposits.Sum(d => d.Amount) - withdraws.Sum(w => w.Amount)
             };

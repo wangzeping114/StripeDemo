@@ -50,6 +50,16 @@ namespace stripeapi.Dtos
         public string Period { get; set; }
 
         /// <summary>
+        /// 代理人ID
+        /// </summary>
+        public string AgentId { get; set; }
+
+        /// <summary>
+        /// 代理人账号
+        /// </summary>
+        public string AgentAccount { get; set; }
+
+        /// <summary>
         /// 充值总额
         /// </summary>
         public decimal TotalDeposit { get; set; }
@@ -116,6 +126,16 @@ namespace stripeapi.Dtos
         public string MaxDepositUserId { get; set; }
 
         /// <summary>
+        /// 最大单笔充值代理人ID
+        /// </summary>
+        public string MaxDepositAgentId { get; set; }
+
+        /// <summary>
+        /// 最大单笔充值代理人账号
+        /// </summary>
+        public string MaxDepositAgentAccount { get; set; }
+
+        /// <summary>
         /// 提现总额
         /// </summary>
         public decimal TotalWithdraw { get; set; }
@@ -139,6 +159,16 @@ namespace stripeapi.Dtos
         /// 最大单笔提现用户ID
         /// </summary>
         public string MaxWithdrawUserId { get; set; }
+
+        /// <summary>
+        /// 最大单笔提现代理人ID
+        /// </summary>
+        public string MaxWithdrawAgentId { get; set; }
+
+        /// <summary>
+        /// 最大单笔提现代理人账号
+        /// </summary>
+        public string MaxWithdrawAgentAccount { get; set; }
 
         /// <summary>
         /// 净收入（充值 - 提现）

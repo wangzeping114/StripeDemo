@@ -15,6 +15,17 @@ namespace stripeapi.Entity
         public Guid ProfitAccountId { get; set; }
 
         /// <summary>
+        /// 代理账号ID
+        /// </summary>
+        public string AgentId { get; set; }
+
+        /// <summary>
+        /// 代理账号
+        /// </summary>
+        public string AgentAccount { get; set; }
+
+
+        /// <summary>
         /// 用户ID
         /// </summary>
         [Required]

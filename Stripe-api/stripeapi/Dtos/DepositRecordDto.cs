@@ -92,7 +92,7 @@ namespace stripeapi.Dtos
 
             return new DepositRecordDto
             {
-                Id = entity.Id,
+                Id = entity.ID,
                 UserId = entity.UserId,
                 Amount = entity.Amount,
                 CurrencyCode = entity.CurrencyCode,
@@ -106,7 +106,7 @@ namespace stripeapi.Dtos
                 IpAddress = entity.IpAddress,
                 Channel = entity.Channel,
                 Remark = entity.Remark,
-                CreateTime = entity.CreateTime
+                CreateTime = entity.CreateTime.Value
             };
         }
 
